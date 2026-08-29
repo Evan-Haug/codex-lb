@@ -9,6 +9,7 @@ import type { AccountAction } from "@/features/dashboard/components/account-card
 import type { AccountSummary } from "@/features/dashboard/schemas";
 import { useDateDisplayFormatStore } from "@/hooks/use-date-format";
 import { usePrivacyStore } from "@/hooks/use-privacy";
+import { useSmoothPercent } from "@/hooks/use-smooth-percent";
 import { cn } from "@/lib/utils";
 import { formatCompactAccountId } from "@/utils/account-identifiers";
 import { normalizeStatus, quotaBarColor, quotaBarTrack } from "@/utils/account-status";
@@ -246,9 +247,25 @@ function SortHeader({
 
 function AccountQuotaCells({ account }: { account: AccountSummary }) {
   const { t } = useTranslation();
+  const primaryState = useSmoothPercent(account.usage?.primaryRemainingPercent ?? null);
+  const secondaryState = useSmoothPercent(account.usage?.secondaryRemainingPercent ?? null);
+  const monthlyState = useSmoothPercent(account.usage?.monthlyRemainingPercent ?? null);
+  const hasPrimaryWindow = account.windowMinutesPrimary != null || primaryState.everKnown;
+  const hasSecondaryWindow = account.windowMinutesSecondary != null || secondaryState.everKnown;
+  const hasMonthlyWindow = account.windowMinutesMonthly != null || monthlyState.everKnown;
+  const monthlyOnly = hasMonthlyWindow && !hasPrimaryWindow && !hasSecondaryWindow;
+  const weeklyOnly = !hasPrimaryWindow && hasSecondaryWindow;
+  const quotas = monthlyOnly
+    ? [quotaLabel("Monthly", monthlyState.percent, account.resetAtMonthly)]
+    : weeklyOnly
+      ? [quotaLabel("Weekly", secondaryState.percent, account.resetAtSecondary)]
+      : [
+          quotaLabel("5h", primaryState.percent, account.resetAtPrimary),
+          quotaLabel("Weekly", secondaryState.percent, account.resetAtSecondary),
+        ];
   return (
     <div className="grid gap-1.5 text-xs">
-      {accountQuotaLabels(account).map((quota) => (
+      {quotas.map((quota) => (
         <div key={quota.label} className="grid grid-cols-[2.75rem_minmax(3rem,auto)_minmax(2.75rem,0.45fr)_minmax(0,1fr)] items-center gap-2">
           <span className="text-muted-foreground">{localizedQuotaLabel(quota.label, t)}</span>
           <span className="font-medium tabular-nums text-foreground">{quota.percentLabel}</span>
@@ -272,7 +289,7 @@ function QuotaMeter({ percent }: { percent: number | null }) {
       data-testid="account-list-quota-meter"
     >
       <div
-        className={cn("h-full rounded-full transition-all duration-500 ease-out", quotaBarColor(clamped))}
+        className={cn("h-full rounded-full transition-colors duration-500 ease-out", quotaBarColor(clamped))}
         style={{ width: `${clamped}%` }}
       />
     </div>
